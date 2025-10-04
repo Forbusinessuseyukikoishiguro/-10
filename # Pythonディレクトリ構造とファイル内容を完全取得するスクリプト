@@ -1,0 +1,398 @@
+# Pythonディレクトリ構造とファイル内容を完全取得するスクリプト
+
+指定ディレクトリの全ファイルとその内容を綺麗に取得するPythonスクリプトを作成します。
+
+---
+
+## 方法1: シンプルな完全取得スクリプト
+
+```python
+import os
+from pathlib import Path
+
+def collect_all_files(root_dir):
+    """
+    指定ディレクトリ配下の全ファイル情報を取得
+    
+    Args:
+        root_dir: ルートディレクトリパス
+    
+    Returns:
+        dict: ファイル情報の辞書
+    """
+    root_path = Path(root_dir)
+    result = {
+        "root_directory": str(root_path),
+        "total_files": 0,
+        "total_size": 0,
+        "files": []
+    }
+    
+    # 全ファイルを走査
+    for file_path in root_path.rglob('*'):
+        if file_path.is_file():
+            try:
+                # ファイル情報取得
+                file_info = {
+                    "path": str(file_path),
+                    "relative_path": str(file_path.relative_to(root_path)),
+                    "name": file_path.name,
+                    "extension": file_path.suffix,
+                    "size": file_path.stat().st_size,
+                    "content": None
+                }
+                
+                # テキストファイルの内容を読み込み
+                if file_path.suffix in ['.py', '.txt', '.md', '.json', '.yml', '.yaml', '.toml', '.ini', '.cfg']:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            file_info["content"] = f.read()
+                    except UnicodeDecodeError:
+                        # UTF-8で読めない場合は他のエンコーディングを試す
+                        try:
+                            with open(file_path, 'r', encoding='shift-jis') as f:
+                                file_info["content"] = f.read()
+                        except:
+                            file_info["content"] = "[バイナリファイルまたは読み込みエラー]"
+                else:
+                    file_info["content"] = "[バイナリファイル]"
+                
+                result["files"].append(file_info)
+                result["total_files"] += 1
+                result["total_size"] += file_info["size"]
+                
+            except Exception as e:
+                print(f"エラー: {file_path} - {e}")
+    
+    return result
+
+
+def save_to_markdown(data, output_file="directory_summary.md"):
+    """
+    取得したデータをMarkdown形式で保存
+    
+    Args:
+        data: collect_all_files()の戻り値
+        output_file: 出力ファイル名
+    """
+    with open(output_file, 'w', encoding='utf-8') as f:
+        # ヘッダー
+        f.write(f"# ディレクトリ構造とファイル内容\n\n")
+        f.write(f"**ルートディレクトリ:** `{data['root_directory']}`\n\n")
+        f.write(f"**総ファイル数:** {data['total_files']}\n\n")
+        f.write(f"**合計サイズ:** {data['total_size']:,} bytes\n\n")
+        f.write("---\n\n")
+        
+        # 各ファイル
+        for file_info in data['files']:
+            f.write(f"## {file_info['relative_path']}\n\n")
+            f.write(f"- **サイズ:** {file_info['size']:,} bytes\n")
+            f.write(f"- **拡張子:** `{file_info['extension']}`\n\n")
+            
+            if file_info['content'] and file_info['content'] != "[バイナリファイル]":
+                f.write("### 内容:\n\n")
+                f.write("```python\n" if file_info['extension'] == '.py' else "```\n")
+                f.write(file_info['content'])
+                f.write("\n```\n\n")
+            else:
+                f.write(f"*{file_info['content']}*\n\n")
+            
+            f.write("---\n\n")
+    
+    print(f"保存完了: {output_file}")
+
+
+# 実行
+if __name__ == "__main__":
+    # ディレクトリパス
+    target_dir = r"C:\Users\yukik\Desktop\python_programming"
+    
+    # データ取得
+    print("ファイル情報を取得中...")
+    data = collect_all_files(target_dir)
+    
+    # Markdown保存
+    save_to_markdown(data, "python_programming_summary.md")
+    
+    # 簡易サマリー表示
+    print(f"\n総ファイル数: {data['total_files']}")
+    print(f"合計サイズ: {data['total_size']:,} bytes")
+```
+
+---
+
+## 方法2: JSON形式で保存
+
+```python
+import json
+from pathlib import Path
+
+def save_to_json(data, output_file="directory_data.json"):
+    """JSON形式で保存"""
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"JSON保存完了: {output_file}")
+
+
+# 実行例
+target_dir = r"C:\Users\yukik\Desktop\python_programming"
+data = collect_all_files(target_dir)
+save_to_json(data, "python_programming.json")
+```
+
+---
+
+## 方法3: ツリー構造付き完全版
+
+```python
+import os
+from pathlib import Path
+from datetime import datetime
+
+def create_tree_structure(root_dir):
+    """
+    ディレクトリツリー構造を作成
+    """
+    root_path = Path(root_dir)
+    tree_lines = []
+    
+    def add_tree_line(path, prefix="", is_last=True):
+        connector = "└── " if is_last else "├── "
+        tree_lines.append(f"{prefix}{connector}{path.name}")
+        
+        if path.is_dir():
+            children = sorted(path.iterdir(), key=lambda x: (x.is_file(), x.name))
+            for i, child in enumerate(children):
+                is_last_child = (i == len(children) - 1)
+                extension = "    " if is_last else "│   "
+                add_tree_line(child, prefix + extension, is_last_child)
+    
+    tree_lines.append(root_path.name)
+    children = sorted(root_path.iterdir(), key=lambda x: (x.is_file(), x.name))
+    for i, child in enumerate(children):
+        add_tree_line(child, "", i == len(children) - 1)
+    
+    return "\n".join(tree_lines)
+
+
+def collect_complete_info(root_dir):
+    """
+    完全な情報を取得（ツリー構造含む）
+    """
+    root_path = Path(root_dir)
+    
+    result = {
+        "metadata": {
+            "root_directory": str(root_path),
+            "scan_date": datetime.now().isoformat(),
+            "total_files": 0,
+            "total_directories": 0,
+            "total_size": 0,
+        },
+        "tree_structure": "",
+        "directories": {},
+        "files": []
+    }
+    
+    # ツリー構造作成
+    result["tree_structure"] = create_tree_structure(root_path)
+    
+    # ディレクトリとファイルを走査
+    for item_path in root_path.rglob('*'):
+        relative = item_path.relative_to(root_path)
+        parent_dir = str(relative.parent) if relative.parent != Path('.') else "root"
+        
+        if item_path.is_dir():
+            result["metadata"]["total_directories"] += 1
+            if parent_dir not in result["directories"]:
+                result["directories"][parent_dir] = []
+            result["directories"][parent_dir].append(item_path.name)
+        
+        elif item_path.is_file():
+            try:
+                stat = item_path.stat()
+                file_info = {
+                    "path": str(item_path),
+                    "relative_path": str(relative),
+                    "parent_directory": parent_dir,
+                    "name": item_path.name,
+                    "extension": item_path.suffix,
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "content": None,
+                    "lines": 0,
+                }
+                
+                # テキストファイルの読み込み
+                text_extensions = {'.py', '.txt', '.md', '.json', '.yml', '.yaml', 
+                                  '.toml', '.ini', '.cfg', '.rst', '.html', '.css', 
+                                  '.js', '.sql', '.sh', '.bat'}
+                
+                if item_path.suffix.lower() in text_extensions:
+                    try:
+                        with open(item_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            file_info["content"] = content
+                            file_info["lines"] = len(content.splitlines())
+                    except UnicodeDecodeError:
+                        try:
+                            with open(item_path, 'r', encoding='shift-jis') as f:
+                                content = f.read()
+                                file_info["content"] = content
+                                file_info["lines"] = len(content.splitlines())
+                        except:
+                            file_info["content"] = "[読み込みエラー]"
+                else:
+                    file_info["content"] = "[バイナリファイル]"
+                
+                result["files"].append(file_info)
+                result["metadata"]["total_files"] += 1
+                result["metadata"]["total_size"] += stat.st_size
+                
+            except Exception as e:
+                print(f"エラー: {item_path} - {e}")
+    
+    return result
+
+
+def save_complete_report(data, output_file="complete_report.md"):
+    """
+    完全なレポートをMarkdownで保存
+    """
+    with open(output_file, 'w', encoding='utf-8') as f:
+        # ヘッダー
+        f.write("# Python Programming ディレクトリ完全レポート\n\n")
+        
+        # メタデータ
+        meta = data["metadata"]
+        f.write("## 概要\n\n")
+        f.write(f"- **ルートディレクトリ:** `{meta['root_directory']}`\n")
+        f.write(f"- **スキャン日時:** {meta['scan_date']}\n")
+        f.write(f"- **総ファイル数:** {meta['total_files']}\n")
+        f.write(f"- **総ディレクトリ数:** {meta['total_directories']}\n")
+        f.write(f"- **合計サイズ:** {meta['total_size']:,} bytes ({meta['total_size']/1024/1024:.2f} MB)\n\n")
+        
+        # ツリー構造
+        f.write("## ディレクトリツリー\n\n")
+        f.write("```\n")
+        f.write(data["tree_structure"])
+        f.write("\n```\n\n")
+        
+        # ディレクトリ別ファイル一覧
+        f.write("## ディレクトリ別ファイル一覧\n\n")
+        for dir_name, files in sorted(data["directories"].items()):
+            f.write(f"### {dir_name}\n\n")
+            for file_name in sorted(files):
+                f.write(f"- {file_name}\n")
+            f.write("\n")
+        
+        # ファイル詳細
+        f.write("---\n\n")
+        f.write("## ファイル詳細\n\n")
+        
+        # Pythonファイルのみ
+        python_files = [f for f in data["files"] if f["extension"] == ".py"]
+        if python_files:
+            f.write("### Pythonファイル\n\n")
+            for file_info in sorted(python_files, key=lambda x: x["relative_path"]):
+                f.write(f"#### {file_info['relative_path']}\n\n")
+                f.write(f"- **サイズ:** {file_info['size']:,} bytes\n")
+                f.write(f"- **行数:** {file_info['lines']}\n")
+                f.write(f"- **更新日時:** {file_info['modified']}\n\n")
+                
+                if file_info['content'] and file_info['content'] != "[バイナリファイル]":
+                    f.write("```python\n")
+                    f.write(file_info['content'])
+                    f.write("\n```\n\n")
+                
+                f.write("---\n\n")
+        
+        # その他のテキストファイル
+        other_text_files = [f for f in data["files"] 
+                           if f["extension"] != ".py" and f["content"] and 
+                           f["content"] not in ["[バイナリファイル]", "[読み込みエラー]"]]
+        
+        if other_text_files:
+            f.write("### その他のテキストファイル\n\n")
+            for file_info in sorted(other_text_files, key=lambda x: x["relative_path"]):
+                f.write(f"#### {file_info['relative_path']}\n\n")
+                f.write(f"- **サイズ:** {file_info['size']:,} bytes\n")
+                f.write(f"- **行数:** {file_info['lines']}\n\n")
+                
+                f.write("```\n")
+                f.write(file_info['content'])
+                f.write("\n```\n\n")
+                
+                f.write("---\n\n")
+    
+    print(f"完全レポート保存完了: {output_file}")
+
+
+# 実行
+if __name__ == "__main__":
+    target_dir = r"C:\Users\yukik\Desktop\python_programming"
+    
+    print("完全なディレクトリ情報を取得中...")
+    complete_data = collect_complete_info(target_dir)
+    
+    # Markdownレポート
+    save_complete_report(complete_data, "python_programming_complete.md")
+    
+    # JSON形式でも保存
+    save_to_json(complete_data, "python_programming_complete.json")
+    
+    # サマリー表示
+    print(f"\n=== サマリー ===")
+    print(f"ファイル数: {complete_data['metadata']['total_files']}")
+    print(f"ディレクトリ数: {complete_data['metadata']['total_directories']}")
+    print(f"合計サイズ: {complete_data['metadata']['total_size']:,} bytes")
+```
+
+---
+
+## 使い方
+
+1. **スクリプトを保存**
+```
+collect_files.py として保存
+```
+
+2. **実行**
+```bash
+python collect_files.py
+```
+
+3. **出力ファイル**
+```
+python_programming_complete.md  # 読みやすいMarkdown
+python_programming_complete.json # 機械可読なJSON
+```
+
+---
+
+## カスタマイズ例
+
+### 特定の拡張子のみ取得
+
+```python
+def collect_python_only(root_dir):
+    """Pythonファイルのみ取得"""
+    data = collect_complete_info(root_dir)
+    data["files"] = [f for f in data["files"] if f["extension"] == ".py"]
+    data["metadata"]["total_files"] = len(data["files"])
+    return data
+```
+
+### 大きなファイルを除外
+
+```python
+MAX_SIZE = 1024 * 1024  # 1MB
+
+def collect_small_files_only(root_dir):
+    """1MB以下のファイルのみ"""
+    data = collect_complete_info(root_dir)
+    data["files"] = [f for f in data["files"] if f["size"] <= MAX_SIZE]
+    return data
+```
+
+このスクリプトで、指定ディレクトリの全ファイル内容を綺麗に取得・整理できます。
